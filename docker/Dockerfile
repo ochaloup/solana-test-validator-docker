@@ -1,10 +1,10 @@
 FROM node:22-bookworm-slim
 
 ENV VERSION_LIB_SSL=2.22
-ENV VERSION_YARN=4.2.2
-ENV VERSION_SOLANA=1.18.22
-ENV VERSION_ANCHOR=0.30.1
-ENV VERSION_LIGHTPROTOCOL=0.22.0
+ENV VERSION_YARN=4.9.3
+ENV VERSION_SOLANA=2.3.7
+ENV VERSION_ANCHOR=0.31.1
+ENV VERSION_LIGHTPROTOCOL=0.27.0
 ENV VERSION_PHOTON_INDEXER=0.50.0
 
 RUN apt update && apt upgrade -y
@@ -33,8 +33,13 @@ ENV CARGO_HOME=/opt/.cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y -q
 ENV PATH=$CARGO_HOME/bin:$PATH
 
-# # Install solana
-RUN sh -c "$(curl -sSfL https://release.anza.xyz/v${VERSION_SOLANA}/install)"
+# Install solana
+RUN echo "Installing Solana ${VERSION_SOLANA}..." && \
+    sh -c "$(curl -sSfL https://release.anza.xyz/v${VERSION_SOLANA}/install)" && \
+    echo "Solana installation completed" && \
+    # Update shell profile
+    echo 'export PATH="/home/node/.local/share/solana/install/active_release/bin:$PATH"' >> ~/.bashrc && \
+    echo 'export PATH="/home/node/.local/share/solana/install/active_release/bin:$PATH"' >> ~/.profile
 ENV PATH=/home/node/.local/share/solana/install/active_release/bin:$PATH
 
 # Install anchor and light-protocol
@@ -49,7 +54,7 @@ WORKDIR /working_dir
 # Disable strict mode on corepack
 ENV COREPACK_ENABLE_STRICT=0
 
-# Setup configuration
-RUN solana config set -ud
-RUN solana-keygen new --no-bip39-passphrase -s -o ~/.config/solana/id.json &&\
+# Setup configuration 
+RUN solana config set -ud && \
+    solana-keygen new --no-bip39-passphrase -s -o ~/.config/solana/id.json && \
     solana config set --url localhost --keypair ~/.config/solana/id.json
