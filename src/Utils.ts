@@ -6,6 +6,7 @@ export interface IConfig {
     containerName: string;
     imageName: string;
     uid?: number;
+    gid?: number;
 }
 
 const SOLANA_DOCKER_RC = '.solrc';

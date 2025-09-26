@@ -58,7 +58,7 @@ export class DockerShell {
                 `-u ${uid} ` +
                 `-v ${this.config.projectRootPath}:${WORKING_DIR} ` +
                 '-v solana-docker:/opt ' +
-                '-v solana-docker-cache:/home/node/.cache ' +
+                '-v solana-docker-cache:/home/ubuntu/.cache ' +
                 `${this.config.imageName} bash`;
 
             try {
@@ -72,6 +72,23 @@ export class DockerShell {
             return;
         }
         this.logger.printError(`Container ${this.config.containerName} is already running !`);
+    }
+
+    public async buildImage(): Promise<void> {
+        const uid = this.config.uid || `$(id -u \${USER})`;
+        const gid = this.config.gid || `$(id -g \${USER})`;
+
+        const buildCommand = `docker build --build-arg HOST_UID=${uid} --build-arg HOST_GID=${gid} -t ${this.config.imageName} ./docker`;
+
+        try {
+            this.logger.printLog(`Building Docker image with UID: ${uid}, GID: ${gid}`);
+            this.logger.printLog(buildCommand);
+            execSync(buildCommand, { stdio: [0, 1, 2] });
+        } catch (e) {
+            this.logger.printLog(`Image build failed with code ${e.status}`);
+            this.logger.flushOuput();
+            process.exit(e.status);
+        }
     }
 
     public async stop(): Promise<void> {

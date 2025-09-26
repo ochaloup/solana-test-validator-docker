@@ -3,7 +3,7 @@
 
 ```sh
 # solana base image with anchor, nodejs, yarn, light and photon...
-docker build . -t tchambard/solana-test-validator:solana_2.3.7-anchor_0.31.1-light_0.27.0 -t tchambard/solana-test-validator:latest
+docker build . -t tchambard/solana-test-validator:solana_1.18.26-anchor_0.29.0-light_0.27.0 -t tchambard/solana-test-validator:latest
 ```
 
 ## run solana-test-validator
