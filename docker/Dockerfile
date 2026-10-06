@@ -1,80 +1,69 @@
-FROM ubuntu:24.04
+FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 
-# Accept UID as build argument
 ARG HOST_UID=1000
 ARG HOST_GID=1000
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
+ARG VERSION_SOLANA=3.1.12
+ARG SHA256_SOLANA=4d45dab6ccfe5321292ad6dc152f7ace71ccbddde5ecda0aaa3f92bbfe8ed803
+ARG VERSION_ANCHOR=1.2.1
+ARG COMMIT_ANCHOR=f1d20a94e8857d66e39810039aa5b5eee9ff733e
+ARG VERSION_RUST=1.97.1
+ARG VERSION_RUSTUP=1.28.2
+ARG SHA256_RUSTUP=20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c
+ARG VERSION_NODE=22.23.3
+ARG SHA256_NODE=df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de
+
 ENV TZ=Etc/UTC
-ENV VERSION_SOLANA=2.3.7
-ENV VERSION_ANCHOR=0.31.1
-ENV VERSION_LIGHTPROTOCOL=0.27.0
-ENV VERSION_PHOTON_INDEXER=49b7e7f0d668babbc4d65fe8a0a7236df76f75a8
-ENV VERSION_YARN=4.1.1
 ENV RUSTUP_HOME=/opt/.rust
 ENV CARGO_HOME=/opt/.cargo
 ENV NPM_CONFIG_PREFIX=/opt/.npm-global
-ENV PATH="/opt/.cargo/bin:/opt/.npm-global/bin:$PATH"
 ENV COREPACK_ENABLE_STRICT=0
+ENV PATH="/opt/.cargo/bin:/opt/solana-release/bin:/opt/node/bin:/opt/.npm-global/bin:$PATH"
 
-# Update and install dependencies
-RUN apt update && apt upgrade -y
-RUN DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt install -y bash bzip2 curl gcc-multilib build-essential autoconf automake libtool zlib1g-dev git libssl-dev pkg-config wget procps libudev-dev llvm libclang-dev protobuf-compiler
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      bash bzip2 ca-certificates curl xz-utils gcc-multilib build-essential autoconf automake libtool \
+      zlib1g-dev git libssl-dev pkg-config procps libudev-dev llvm clang libclang-dev protobuf-compiler && \
+    rm -rf /var/lib/apt/lists/*
 
-# Install Node.js directly from Ubuntu packages
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y nodejs
-
-# Install yarn
-RUN npm i -g yarn && \
+# every download is checked against a hash pinned in this file, never one fetched next to it
+RUN curl -fsSLo /tmp/node.tar.xz "https://nodejs.org/dist/v${VERSION_NODE}/node-v${VERSION_NODE}-linux-x64.tar.xz" && \
+    echo "${SHA256_NODE}  /tmp/node.tar.xz" | sha256sum -c - && \
+    mkdir -p /opt/node && \
+    tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1 && \
+    rm /tmp/node.tar.xz && \
     corepack enable && \
-    yarn set version $VERSION_YARN
+    node --version
 
-# Create ubuntu user with specific UID/GID matching host
+RUN curl -fsSLo /tmp/solana-release.tar.bz2 "https://github.com/anza-xyz/agave/releases/download/v${VERSION_SOLANA}/solana-release-x86_64-unknown-linux-gnu.tar.bz2" && \
+    echo "${SHA256_SOLANA}  /tmp/solana-release.tar.bz2" | sha256sum -c - && \
+    tar -xjf /tmp/solana-release.tar.bz2 -C /opt && \
+    rm /tmp/solana-release.tar.bz2 && \
+    solana --version
+
 RUN groupadd -g $HOST_GID ubuntu || true && \
     useradd -m -s /bin/bash -u $HOST_UID -g $HOST_GID ubuntu || true && \
     mkdir -p /working_dir /opt/.npm-global /opt/.rust /opt/.cargo && \
-    chown -R ubuntu:ubuntu /opt /working_dir /home/ubuntu
+    chown -R ubuntu:ubuntu /opt/solana-release /opt/.npm-global /opt/.rust /opt/.cargo /working_dir /home/ubuntu
 
-# Set working directory
+USER ubuntu
 WORKDIR /opt
 
-# Switch to ubuntu user for all installations
-USER ubuntu
-ENV PATH=/opt/.cargo/bin:/opt/.npm-global/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -fsSLo /tmp/rustup-init "https://static.rust-lang.org/rustup/archive/${VERSION_RUSTUP}/x86_64-unknown-linux-gnu/rustup-init" && \
+    echo "${SHA256_RUSTUP}  /tmp/rustup-init" | sha256sum -c - && \
+    chmod +x /tmp/rustup-init && \
+    /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain "${VERSION_RUST}" && \
+    rm /tmp/rustup-init
 
-# Install Rust (force rebuild this layer for version 1.89.0)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.89.0 --profile minimal && \
-    . /opt/.cargo/env
+RUN cargo install --git https://github.com/solana-foundation/anchor --rev "${COMMIT_ANCHOR}" anchor-cli --locked && \
+    anchor --version | grep -q "${VERSION_ANCHOR}" && \
+    rm -rf /opt/.cargo/registry /opt/.cargo/git
 
-# Install Solana
-RUN sh -c "$(curl -sSfL https://release.anza.xyz/v2.3.7/install)" && \
-    echo 'export PATH="/home/ubuntu/.local/share/solana/install/active_release/bin:$PATH"' >> ~/.bashrc && \
-    echo 'export PATH="/home/ubuntu/.local/share/solana/install/active_release/bin:$PATH"' >> ~/.profile && \
-    export PATH="/home/ubuntu/.local/share/solana/install/active_release/bin:$PATH" && \
-    solana --version
-
-# Install light-protocol and anchor
-RUN npm i -g @lightprotocol/zk-compression-cli@$VERSION_LIGHTPROTOCOL && \
-    npm i -g @coral-xyz/anchor@$VERSION_ANCHOR
-
-# Install photon indexer
-RUN cargo install --git https://github.com/lightprotocol/photon.git --rev $VERSION_PHOTON_INDEXER --locked
-
-# Install anchor directly (force rebuild this layer)
-RUN cargo install --git https://github.com/coral-xyz/anchor anchor-cli --tag v$VERSION_ANCHOR --locked --force
-
-# Update final PATH to include all necessary directories
-ENV PATH="/opt/.cargo/bin:/home/ubuntu/.local/share/solana/install/active_release/bin:/opt/.npm-global/bin:$PATH"
-
-# Prepare working directory
 WORKDIR /working_dir
 
-# Setup Solana configuration
-RUN solana config set -ud && \
-    solana-keygen new --no-bip39-passphrase -s -o ~/.config/solana/id.json && \
-    solana config set --url localhost --keypair ~/.config/solana/id.json
+RUN solana config set --url localhost
 
-# Set default command
+# the keypair is created per container, never baked into a published layer
+ENTRYPOINT ["/bin/bash", "-c", "test -f ~/.config/solana/id.json || solana-keygen new --no-bip39-passphrase -s -o ~/.config/solana/id.json; exec \"$@\"", "--"]
 CMD ["/bin/bash"]
